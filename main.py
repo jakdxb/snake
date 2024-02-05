@@ -2,164 +2,181 @@ import pygame
 import sys
 import random
 
-# Inicjalizacja Pygame
 pygame.init()
 
-# Ustawienia okna gry
-WIDTH, HEIGHT = 600, 400
-FPS = 10
+cell_size = 20
+grid_width = 800 // cell_size
+grid_height = 600 // cell_size
 
-# Kolory
-BLACK = (0, 0, 0)
-WHITE = (255, 255, 255)
-RED = (255, 0, 0)
-
-# Inicjalizacja ekranu gry
-screen = pygame.display.set_mode((WIDTH, HEIGHT))
+screen_width = grid_width * cell_size
+screen_height = grid_height * cell_size
+screen = pygame.display.set_mode((screen_width, screen_height))
 pygame.display.set_caption("Snake Game")
 
-# Funkcja rysująca węża na ekranie
+white = (255, 255, 255)
+black = (0, 0, 0)
+brown = (150, 75, 0)
+red = (255, 0, 0)
+green = (162, 196, 145)
+gray = (169, 169, 169)
+
+font = pygame.font.Font(None, 36)
+big_font = pygame.font.Font(None, 72)
+
+difficulty = None
+easy = {'obstacle_count': 5, 'snake_speed': 10}
+normal = {'obstacle_count': 10, 'snake_speed': 15}
+hard = {'obstacle_count': 15, 'snake_speed': 20}
+
 def draw_snake(snake):
     for segment in snake:
-        pygame.draw.rect(screen, WHITE, segment)
+        pygame.draw.rect(screen, green, segment)
+        pygame.draw.rect(screen, gray, segment, 1)
 
-# Funkcja rysująca przeszkody na ekranie
 def draw_obstacles(obstacles):
     for obstacle in obstacles:
-        pygame.draw.rect(screen, RED, obstacle)
+        pygame.draw.rect(screen, brown, obstacle)
 
-# Funkcja rysująca jedzenie na ekranie
-def draw_food(food):
-    pygame.draw.rect(screen, WHITE, food)
+def draw_apple(apple):
+    pygame.draw.ellipse(screen, red, apple)
 
-# Funkcja sprawdzająca kolizję z przeszkodami
-def check_obstacle_collision(snake, obstacles):
-    for obstacle in obstacles:
-        if snake[0].colliderect(obstacle):
-            return True
-    return False
+def draw_menu():
+    screen.fill(green)
+    # Napis "SNAKE GAME"
+    snake_game_text = big_font.render("SNAKE GAME", True, black)
+    snake_game_rect = snake_game_text.get_rect(center=(screen_width // 2, screen_height // 4))
+    screen.blit(snake_game_text, snake_game_rect)
 
-# Funkcja sprawdzająca kolizję z samym sobą
-def check_self_collision(snake):
-    for i in range(1, len(snake)):
-        if snake[0].colliderect(snake[i]):
-            return True
-    return False
+    text = font.render("Press X for Easy, E for Normal, H for Hard", True, black)
+    text_rect = text.get_rect(center=(screen_width // 2, screen_height // 2))
+    screen.blit(text, text_rect)
 
-# Funkcja generująca nowe położenie dla jedzenia
-def generate_food_position(snake, obstacles):
-    while True:
-        food_position = (
-            random.randrange(0, WIDTH, 20),
-            random.randrange(0, HEIGHT, 20)
-        )
-        # Sprawdź, czy jedzenie nie koliduje z wężem, przeszkodami lub samym sobą
-        if food_position not in [segment.topleft for segment in snake] and \
-                food_position not in [obstacle.topleft for obstacle in obstacles]:
-            return food_position
+    press_p_text = font.render("Press P to pause during the game", True, black)
+    press_p_rect = press_p_text.get_rect(center=(screen_width // 2, screen_height // 2 + 40))
+    screen.blit(press_p_text, press_p_rect)
 
-# Funkcja generująca przeszkody
-def generate_obstacles(snake, food):
-    obstacles = []
-    for _ in range(3):
-        obstacle_position = (
-            random.randrange(0, WIDTH, 20),
-            random.randrange(0, HEIGHT, 20)
-        )
-        # Sprawdź, czy przeszkoda nie koliduje z wężem, jedzeniem lub innymi przeszkodami
-        if obstacle_position not in [segment.topleft for segment in snake] and \
-                obstacle_position != food.topleft and \
-                obstacle_position not in [obs.topleft for obs in obstacles]:
-            obstacles.append(pygame.Rect(obstacle_position, (20, 20)))
-    return obstacles
+    pygame.display.flip()
 
-# Początkowe położenie węża
-initial_length = 1
-snake = [pygame.Rect(100 - i * 20, 100, 20, 20) for i in range(initial_length)]
+def draw_game_over(score):
+    screen.fill(white)
+    game_over_text = font.render("GAME OVER", True, black)
+    score_text = font.render(f"SCORE: {score}", True, black)
 
-# Początkowe położenie jedzenia
-food = pygame.Rect(200, 200, 20, 20)
+    game_over_rect = game_over_text.get_rect(center=(screen_width // 2, screen_height // 2 - 30))
+    score_rect = score_text.get_rect(center=(screen_width // 2, screen_height // 2 + 30))
 
-# Początkowe położenie przeszkód
-obstacles = generate_obstacles(snake, food)
+    screen.blit(game_over_text, game_over_rect)
+    screen.blit(score_text, score_rect)
 
-# Kierunek ruchu węża (początkowo w prawo)
-direction = "RIGHT"
+    pygame.display.flip()
+    pygame.time.delay(3000)
+    draw_menu()
 
-# Wynik gry
-score = 0
+def game_loop():
+    global difficulty
+    snake = [pygame.Rect(2 * cell_size, 2 * cell_size, cell_size, cell_size)]
+    direction = "RIGHT"
+    change_to = direction
+    game_over = False
+    paused = False
+    score = 0
 
-# Czcionka do wyświetlania wyniku
-font = pygame.font.Font(None, 36)
+    obstacles = [pygame.Rect(random.randint(0, grid_width - 1) * cell_size,
+                             random.randint(0, grid_height - 1) * cell_size, cell_size, cell_size) for _ in range(difficulty['obstacle_count'])]
 
-# Pętla gry
-clock = pygame.time.Clock()
+    apple = pygame.Rect(random.randint(0, grid_width - 1) * cell_size,
+                        random.randint(0, grid_height - 1) * cell_size, cell_size, cell_size)
+
+    clock = pygame.time.Clock()
+
+    while not game_over:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_UP and direction != "DOWN":
+                    change_to = "UP"
+                elif event.key == pygame.K_DOWN and direction != "UP":
+                    change_to = "DOWN"
+                elif event.key == pygame.K_LEFT and direction != "RIGHT":
+                    change_to = "LEFT"
+                elif event.key == pygame.K_RIGHT and direction != "LEFT":
+                    change_to = "RIGHT"
+                elif event.key == pygame.K_p:
+                    paused = not paused
+
+        if paused:
+            pygame.time.delay(100)
+            screen.fill(black)
+            pause_text = big_font.render("PAUSED", True, white)
+            press_p_text = font.render("Press P to continue", True, white)
+            pause_rect = pause_text.get_rect(center=(screen_width // 2, screen_height // 2 - 20))
+            press_p_rect = press_p_text.get_rect(center=(screen_width // 2, screen_height // 2 + 20))
+            screen.blit(pause_text, pause_rect)
+            screen.blit(press_p_text, press_p_rect)
+            pygame.display.flip()
+            continue
+
+        direction = change_to
+
+        if direction == "UP":
+            new_head = pygame.Rect(snake[0].x, snake[0].y - cell_size, cell_size, cell_size)
+        elif direction == "DOWN":
+            new_head = pygame.Rect(snake[0].x, snake[0].y + cell_size, cell_size, cell_size)
+        elif direction == "LEFT":
+            new_head = pygame.Rect(snake[0].x - cell_size, snake[0].y, cell_size, cell_size)
+        elif direction == "RIGHT":
+            new_head = pygame.Rect(snake[0].x + cell_size, snake[0].y, cell_size, cell_size)
+
+        if new_head.collidelist(obstacles) != -1 or new_head.collidelist(snake[1:]) != -1:
+            game_over = True
+
+        new_head.x = (new_head.x + screen_width) % screen_width
+        new_head.y = (new_head.y + screen_height) % screen_height
+
+        if new_head.colliderect(apple):
+            apple = pygame.Rect(random.randint(0, grid_width - 1) * cell_size,
+                                random.randint(0, grid_height - 1) * cell_size, cell_size, cell_size)
+            snake.append(pygame.Rect(-cell_size, -cell_size, cell_size, cell_size))
+            score += 1
+
+
+        snake.insert(0, new_head)
+        if len(snake) > score + 1:
+            snake.pop()
+
+        screen.fill(black)
+        draw_snake(snake)
+        draw_obstacles(obstacles)
+        draw_apple(apple)
+        score_text = font.render(f"SCORE: {score}", True, white)
+        screen.blit(score_text, (screen_width - 150, 10))
+        pygame.display.flip()
+
+        clock.tick(difficulty['snake_speed'])
+
+    draw_game_over(score)
+
 while True:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             pygame.quit()
             sys.exit()
 
-        # Kontrola ruchu węża
-        keys = pygame.key.get_pressed()
-        if keys[pygame.K_UP] and direction != "DOWN":
-            direction = "UP"
-        elif keys[pygame.K_DOWN] and direction != "UP":
-            direction = "DOWN"
-        elif keys[pygame.K_LEFT] and direction != "RIGHT":
-            direction = "LEFT"
-        elif keys[pygame.K_RIGHT] and direction != "LEFT":
-            direction = "RIGHT"
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_x:
+                difficulty = easy
+                game_loop()
 
-    # Przesunięcie głowy węża zgodnie z kierunkiem
-    if direction == "UP":
-        snake[0].y = (snake[0].y - 20) % HEIGHT
-    elif direction == "DOWN":
-        snake[0].y = (snake[0].y + 20) % HEIGHT
-    elif direction == "LEFT":
-        snake[0].x = (snake[0].x - 20) % WIDTH
-    elif direction == "RIGHT":
-        snake[0].x = (snake[0].x + 20) % WIDTH
+            elif event.key == pygame.K_e:
+                difficulty = normal
+                game_loop()
 
-    # Sprawdzenie kolizji z przeszkodami
-    if check_obstacle_collision(snake, obstacles) or check_self_collision(snake):
-        # Ekran "Game Over"
-        game_over_text = font.render("Game Over", True, WHITE)
-        screen.blit(game_over_text, (WIDTH // 2 - 100, HEIGHT // 2 - 18))
-        pygame.display.flip()
-        pygame.time.wait(2000)  # Poczekaj 2 sekundy
-        # Zresetuj grę
-        snake = [pygame.Rect(100 - i * 20, 100, 20, 20) for i in range(initial_length)]
-        food.topleft = generate_food_position(snake, obstacles)
-        obstacles = generate_obstacles(snake, food)
-        direction = "RIGHT"
-        score = 0
+            elif event.key == pygame.K_h:
+                difficulty = hard
+                game_loop()
 
-    # Sprawdzenie kolizji z jedzeniem
-    if snake[0].colliderect(food):
-        # Dodanie nowego segmentu węża
-        snake.append(pygame.Rect(0, 0, 20, 20))
-        # Wygenerowanie nowego położenia dla jedzenia
-        food.topleft = generate_food_position(snake, obstacles)
-        # Zwiększenie wyniku
-        score += 1
-
-    # Przesunięcie reszty ciała węża
-    for i in range(len(snake) - 1, 0, -1):
-        snake[i].x = snake[i - 1].x
-        snake[i].y = snake[i - 1].y
-
-    # Rysowanie na ekranie
-    screen.fill(BLACK)
-    draw_snake(snake)
-    draw_obstacles(obstacles)
-    draw_food(food)
-
-    # Wyświetlenie wyniku
-    score_text = font.render(f"Score: {score}", True, WHITE)
-    screen.blit(score_text, (WIDTH - 150, 10))
-
-    pygame.display.flip()
-
-    # Ustawienie liczby klatek na sekundę
-    clock.tick(FPS)
+    draw_menu()
+    pygame.display.update()
